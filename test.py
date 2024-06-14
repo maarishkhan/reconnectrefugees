@@ -1,5 +1,6 @@
 import streamlit as st
 import folium
+from streamlit_folium import st_folium
 from langchain_core.callbacks import BaseCallbackHandler
 from translate import Translator
 from langchain.vectorstores import Chroma
@@ -25,10 +26,7 @@ chat_input = st.sidebar.text_input("Type a message here...", key="ollama_query")
 if chat_input:
     vectordb = "chromadb"
     if chat_input:
-        model = Ollama(
-            model="tinyllama",
-            callback_manager=CallbackManager([BaseCallbackHandler(), StreamingStdOutCallbackHandler()])
-        )
+        model = Ollama(model="tinyllama")
 
         persist_directory = "chromadb"
 
@@ -48,7 +46,8 @@ if chat_input:
                 vectordb.persist()
         else:
             vectordb = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
-        query_chain = RetrievalQA.from_chain_type(llm="tinyllama", retriever=vectordb.as_retriever())
+        vector = str(vectordb.as_retriever())
+        query_chain = RetrievalQA.from_chain_type(model, vector)
         prompt = """
                     As a Humanitarian Aid Worker, your primary goal is to assist refugees by addressing their questions
         promptly and clearly. Regardless of the language in which the queries are posed, strive to respond in 
@@ -71,7 +70,7 @@ def main():
         translate_page()
 
 
-TRANSLATOR_LANGUAGES = ["en", "es", "fr", "de"]
+TRANSLATOR_LANGUAGES = ["en", "es", "fr", "de", "ar"]
 
 
 def home_page():
@@ -94,30 +93,17 @@ def map_page():
     for camp, coords in location_data.items():
         folium.Marker(coords, popup=f"{camp}<br>Capacity: 5000<br>Services: Food, Shelter").add_to(m)
     st.write("Click on markers for more details.")
-    folium_static(m)
-
-
-def folium_static(m):
-    st.write("""
-        <style>
-.leaflet-container{
-            height:600px;
-            width:100%;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    st.write(m._repr_html_(), unsafe_allow_html=True)
+    st_data = st_folium(m, width=725)
 
 
 def translate_page():
     st.header("Translation Service")
-    translator = Translator(to_lang="fr")
     lang = st.selectbox("Select Language", TRANSLATOR_LANGUAGES, index=0)
     text = st.text_input("Enter text to translate:", "")
     if text:
-        translator.to_lang = lang
-        translated = translator.translate(text)
-        st.write(f"Translated text: {translated}")
+        translator = Translator(to_lang=lang)
+        final = translator.translate(text)
+        st.write(f"Translated text: {final}")
 
 
 if __name__ == "__main__":
