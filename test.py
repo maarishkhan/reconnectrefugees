@@ -1,19 +1,18 @@
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-from langchain_core.callbacks import BaseCallbackHandler
 from translate import Translator
 from langchain.vectorstores import Chroma
-from langchain.document_loaders import TextLoader, DirectoryLoader, PyPDFLoader
+from langchain.document_loaders import TextLoader, DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.llms import Ollama
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.callbacks.manager import CallbackManager
 from langchain.chains import RetrievalQA
 from langchain.embeddings import OllamaEmbeddings
-from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 import os
+import subprocess
+
+load_dotenv()
 
 embeddings = OllamaEmbeddings()
 
@@ -23,42 +22,79 @@ if "page" not in st.session_state:
 st.sidebar.title("Chat Area")
 chat_input = st.sidebar.text_input("Type a message here...", key="ollama_query")
 
-if chat_input:
-    vectordb = "chromadb"
-    if chat_input:
-        model = Ollama(model="tinyllama")
 
-        persist_directory = "chromadb"
-
-        if not os.path.exists(persist_directory):
-            with st.sidebar.spinner('🚀 Starting your bot.  This might take a while'):
-                text_loader = DirectoryLoader("./data/", glob="./*.txt", loader_cls=TextLoader)
-
-                text_documents = text_loader.load()
-
-                splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=0)
-
-                text_context = "\n\n".join(str(p.page_content) for p in text_documents)
-
-                data = splitter.split_text(text_context)
-
-                vectordb = Chroma.from_texts(data, embeddings, persist_directory=persist_directory)
-                vectordb.persist()
+def check_model_availability(Mname):
+    try:
+        result = subprocess.run(['ollama', 'list'], capture_output=True, text=True)
+        if result.returncode == 0:
+            models_list = result.stdout
+            return Mname in models_list
         else:
-            vectordb = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
-        vector = str(vectordb.as_retriever())
-        query_chain = RetrievalQA.from_chain_type(model, vector)
-        prompt = """
-                    As a Humanitarian Aid Worker, your primary goal is to assist refugees by addressing their questions
+            st.sidebar.error("Error checking available models.")
+            return False
+    except Exception as e:
+        st.sidebar.error(f"An error occurred while checking model availability: {e}")
+        return False
+
+
+prompt = """
+        As a Humanitarian Aid Worker, your primary goal is to assist refugees by addressing their questions
         promptly and clearly. Regardless of the language in which the queries are posed, strive to respond in 
         the same language for effective communication and understanding. Offer concise and professional 
         answers to ensure the refugees receive the support they need in a timely manner. Remember, your 
-        responses should be both informative and empathetic to meet the refugees' diverse needs and situations
+        responses should be both informative and empathetic to meet the refugees' diverse needs and situations.
         Remember, your role is crucial in providing essential support and information to refugees in need. 
         Your professionalism and compassion can make a significant difference in their lives.
-                    """
-        response = query_chain({"query": prompt + chat_input})
-        st.sidebar.write(f"Response: {response['result']}")
+        """
+model_name = "tinyllama:latest"
+model = Ollama(model=model_name)
+persist_directory = "chromadb"
+data_directory = "./data/"
+vectordb = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+retriever = vectordb.as_retriever()
+query_chain = RetrievalQA.from_chain_type(llm=model, retriever=retriever, chain_type="stuff")
+
+try:
+    response = query_chain({"query": prompt})
+    st.sidebar.write(f"Response: {response['result']}")
+except ValueError as e:
+    st.sidebar.error(f"Error in processing the query: {e}")
+
+if chat_input:
+    model_name = "tinyllama:latest"
+    if not check_model_availability(model_name):
+        st.sidebar.error(f"Model '{model_name}' not found. Please ensure it is available.")
+    else:
+        model = Ollama(model=model_name)
+
+        persist_directory = "chromadb"
+        data_directory = "./data/"
+        if not os.path.exists(persist_directory):
+            if os.path.exists(data_directory):
+                with st.spinner('🚀 Starting your bot. This might take a while'):
+                    text_loader = DirectoryLoader(data_directory, glob="./*.txt", loader_cls=TextLoader)
+                    text_documents = text_loader.load()
+                    splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=5)
+                    text_context = "\n\n".join(str(p.page_content) for p in text_documents)
+                    data = splitter.split_text(text_context)
+                    vectordb = Chroma.from_texts(data, embeddings, persist_directory=persist_directory)
+                    vectordb.persist()
+            else:
+                st.sidebar.error(
+                    f"Data directory '{data_directory}' not found. Please ensure it exists and contains the necessary "
+                    f"text files.")
+        else:
+            vectordb = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+
+        retriever = vectordb.as_retriever()
+        query_chain = RetrievalQA.from_chain_type(llm=model, retriever=retriever, chain_type="stuff")
+
+        try:
+            response = query_chain({"query": chat_input})
+            st.sidebar.write(f"Response: {response['result']}")
+        except ValueError as e:
+            st.sidebar.error(f"Error in processing the query: {e}")
+            st.write(text_documents)
 
 
 def main():
@@ -70,7 +106,7 @@ def main():
         translate_page()
 
 
-TRANSLATOR_LANGUAGES = ["en", "es", "fr", "de", "ar"]
+TRANSLATOR_LANGUAGES = ["en", "es", "fr", "de", "ar", "it", "ru", "ja", "zh"]
 
 
 def home_page():
