@@ -12,8 +12,10 @@ from langchain.chains import RetrievalQA
 from langchain.embeddings import OllamaEmbeddings
 from dotenv import load_dotenv
 from streamlit_option_menu import option_menu
+from openai import OpenAI
 
 load_dotenv()
+
 embeddings = OllamaEmbeddings()
 
 if "history" not in st.session_state:
@@ -22,11 +24,30 @@ if "history" not in st.session_state:
 if "language" not in st.session_state:
     st.session_state.language = "en"
 
-st.set_page_config(page_title="Refugee Assistance Hub", page_icon="🌍")
+st.set_page_config(
+    page_title="Refugee Assistance Hub",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 MODEL_NAME = "tinyllama:latest"
 PERSIST_DIRECTORY = "chromadb"
 DATA_DIRECTORY = "./data/"
+TRANSLATOR_LANGUAGES = {
+    "English": "en",
+    "Spanish": "es",
+    "French": "fr",
+    "German": "de",
+    "Arabic": "ar",
+    "Italian": "it",
+    "Russian": "ru",
+    "Japanese": "ja",
+    "Chinese (Simplified)": "zh",
+    "Portuguese": "pt",
+    "Hindi": "hi",
+    "Chinese (Traditional)": "zh-TW"
+}
 
 
 def check_model_availability(Mname):
@@ -87,9 +108,6 @@ def get_initial_response():
             st.error(f"Error processing the query: {err}")
 
 
-get_initial_response()
-
-
 def translate_text(text, to_lang):
     if to_lang == "en":
         return text
@@ -125,81 +143,86 @@ def map_page():
         "Camp E": [35.6895, 139.6917]
     }
     m = folium.Map(location=[0, 0], zoom_start=2)
-    for camp, coords in location_data.items():
+    for camp, cords in location_data.items():
         folium.Marker(
-            coords,
-            popup=f"{camp}<br>{translate_text('Capacity', st.session_state.language)}: 5000<br>{translate_text('Services', st.session_state.language)}: {translate_text('Food, Shelter', st.session_state.language)}"
+            cords,
+            popup=f"{camp}<br>{translate_text('Capacity', st.session_state.language)}: "
+                  f"5000<br>{translate_text('Services', st.session_state.language)}: "
+                  f"{translate_text('Food, Shelter', st.session_state.language)}"
         ).add_to(m)
     st.write(translate_text("Click on markers for more details.", st.session_state.language))
     st_folium(m, width=725)
 
 
-TRANSLATOR_LANGUAGES = {
-    "English": "en",
-    "Spanish": "es",
-    "French": "fr",
-    "German": "de",
-    "Arabic": "ar",
-    "Italian": "it",
-    "Russian": "ru",
-    "Japanese": "ja",
-    "Chinese (Simplified)": "zh",
-    "Portuguese": "pt",
-    "Hindi": "hi",
-    "Chinese (Traditional)": "zh-TW"
-}
+def chat_playground():
+    st.header(translate_text("Chat Playground", st.session_state.language))
 
+    client = OpenAI(
+        base_url="http://localhost:11434/v1",
+        api_key="ollama",
+    )
 
-def translate_page():
-    st.header(translate_text("Translation Service", st.session_state.language))
-    lang = st.selectbox(translate_text("Select Language", st.session_state.language), list(TRANSLATOR_LANGUAGES.keys()),
-                        index=list(TRANSLATOR_LANGUAGES.values()).index(st.session_state.language))
-    st.session_state.language = TRANSLATOR_LANGUAGES[lang]
-    text = st.text_input(translate_text("Enter text to translate:", st.session_state.language))
-    if text:
-        st.write(
-            f"{translate_text('Translated text: ', st.session_state.language)}: {translate_text(text, st.session_state.language)}")
+    message_container = st.container()
 
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-def chat_page():
-    st.header(translate_text("Chat with AI Assistant", st.session_state.language))
-    for msg in st.session_state.history:
-        with st.chat_message(msg['role']):
-            st.markdown(msg['content'])
+    for message in st.session_state.messages:
+        avatar = "🤖" if message["role"] == "assistant" else "😎"
+        with message_container.chat_message(message["role"], avatar=avatar):
+            st.markdown(message["content"])
 
-    prompt = st.text_input(translate_text("Say something", st.session_state.language))
-    if prompt:
-        st.session_state.history.append({'role': 'user', 'content': prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    if prompt := st.chat_input(translate_text("Enter a prompt here...", st.session_state.language)):
+        try:
+            st.session_state.messages.append(
+                {"role": "user", "content": prompt})
 
-        with st.spinner(translate_text('💡Thinking', st.session_state.language)):
-            llm, db = initialize_model_and_db()
-            if llm and db:
-                retriever = db.as_retriever()
-                chat_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, chain_type="stuff")
-                response = chat_chain({"query": prompt})
-                st.session_state.history.append({'role': 'Assistant', 'content': response['result']})
-                with st.chat_message("Assistant"):
-                    st.markdown(response['result'])
+            message_container.chat_message("user", avatar="😎").markdown(prompt)
+
+            with message_container.chat_message("assistant", avatar="🤖"):
+                with st.spinner(translate_text("Model working...", st.session_state.language)):
+                    stream = client.chat.completions.create(
+                        model=MODEL_NAME,
+                        messages=[
+                            {"role": m["role"], "content": m["content"]}
+                            for m in st.session_state.messages
+                        ],
+                        stream=True,
+                    )
+                # stream response
+                response = st.write_stream(stream)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": response})
+
+        except Exception as e:
+            st.error(e, icon="⛔️")
 
 
 def main():
+    selected_lang = st.sidebar.selectbox(
+        translate_text("Select Language", st.session_state.language),
+        list(TRANSLATOR_LANGUAGES.keys()),
+        index=list(TRANSLATOR_LANGUAGES.values()).index(st.session_state.language)
+    )
+    st.session_state.language = TRANSLATOR_LANGUAGES[selected_lang]
+
+    # Navigation Menu
     page = option_menu(
-        menu_title="Navigation",
-        options=["Home", "Map", "Translate", "Chat"],
-        icons=["house", "list-task", "globe", "chat"],
+        menu_title=translate_text("Navigation", st.session_state.language),
+        options=[translate_text("Home", st.session_state.language),
+                 translate_text("Map", st.session_state.language),
+                 translate_text("Chat Playground", st.session_state.language)],
+        icons=["house", "map", "chat"],
         orientation="horizontal",
         default_index=0
     )
-    if page == "Home":
+
+    if page == translate_text("Home", st.session_state.language):
         home_page()
-    elif page == "Map":
+    elif page == translate_text("Map", st.session_state.language):
         map_page()
-    elif page == "Translate":
-        translate_page()
-    elif page == "Chat":
-        chat_page()
+    elif page == translate_text("Chat Playground", st.session_state.language):
+        chat_playground()
 
 
 if __name__ == "__main__":
