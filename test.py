@@ -20,7 +20,6 @@ import time
 import base64
 from streamlit_theme import st_theme
 import ollama
-from st_click_detector import click_detector
 
 load_dotenv()
 
@@ -507,15 +506,15 @@ def fetch_latest_news():
 
 
 # Display news feed
-def display_news_feed(news,color):
+def display_news_feed(news):
     news_feed = " | ".join(
-        [f"<a href='{article['url']}' style='color: {color};'>{article['title']}</a>" for article in news])
+        [f"<a href='{article['url']}' style='color: #ffffff;'>{article['title']}</a>" for article in news])
     st.markdown(f"<marquee class='news-marquee' scrollamount='11'>{news_feed}</marquee>", unsafe_allow_html=True)
 
 
-def news_scroll(color="#ffffff"):
+def news_scroll():
     news = fetch_latest_news()
-    display_news_feed(news,color)
+    display_news_feed(news)
 
 
 def schooling_page():
@@ -529,36 +528,25 @@ def job_page():
 
 def main():
 
+    news_scroll()
     theme = st_theme()
-
     if theme["lightenedBg05"] == "hsla(220, 24%, 10%, 1)":
-        st.sidebar.image("darklogo.jpg", caption=None, width=None, use_column_width=None, clamp=False, channels="RGB", output_format="auto")
-        #st.sidebar.html('<a href = "#"> <img src="darklogo.jpg"></a>')
-
+        #st.sidebar.image("darklogo.jpg", caption=None, width=None, use_column_width=None, clamp=False, channels="RGB", output_format="auto")
+        st.sidebar.markdown('<a href = "https://localhost:8501> <img src="darklogo.png"></a>',unsafe_allow_html=True)
     else:
-        st.sidebar.image("updatedLightMode.png", caption=None, width=None, use_column_width=None, clamp=False, channels="RGB", output_format="auto")
-        news_scroll("#000000")
-    #news_scroll()
-    #theme = st_theme()
-    #if theme["lightenedBg05"] == "hsla(220, 24%, 10%, 1)":
-    #    #st.sidebar.image("darklogo.jpg", caption=None, width=None, use_column_width=None, clamp=False, channels="RGB", output_format="auto")
-    #else:
-    #    st.sidebar.image("logo.png", caption=None, width=None, use_column_width=None, clamp=False, channels="RGB", output_format="auto")
+        st.sidebar.image("logo.png", caption=None, width=None, use_column_width=None, clamp=False, channels="RGB", output_format="auto")
 
     col1, col2 = st.columns([3, 1])
     with col2:
         chat_playground()
     with col1:
-        st.markdown("#### " + translate_text("Select Language", st.session_state.language))
-
         selected_lang = st.selectbox(
-           "",
-           list(TRANSLATOR_LANGUAGES.keys()),
-           index=list(TRANSLATOR_LANGUAGES.values()).index(st.session_state.language)
+            "Select Language",
+            list(TRANSLATOR_LANGUAGES.keys()),
+            index=list(TRANSLATOR_LANGUAGES.values()).index(st.session_state.language)
         )
         if st.session_state.language != TRANSLATOR_LANGUAGES[selected_lang]:
             st.session_state.language = TRANSLATOR_LANGUAGES[selected_lang]
-            # Call the rain function with the desired emoji and settings
             rain(
                 emoji="⏳",
                 font_size=54,
@@ -587,6 +575,8 @@ def main():
             }
         )
 
+
+
         if horizontal_menu == translate_text("Services", st.session_state.language):
             with st.sidebar:
                 vertical_menu = option_menu(
@@ -594,8 +584,7 @@ def main():
                     options=[
                         translate_text("Housing", st.session_state.language),
                         translate_text("Schooling", st.session_state.language),
-                        translate_text("Job", st.session_state.language),
-                        translate_text("City Info", st.session_state.language)
+                        translate_text("Job", st.session_state.language)
                     ],
                     icons=["house", "book", "briefcase", "city"],
                     orientation="vertical",
@@ -614,8 +603,6 @@ def main():
             elif vertical_menu == translate_text("Job", st.session_state.language):
                 job_page()
                 map_page()
-            elif vertical_menu == translate_text("City Info", st.session_state.language):
-                city_info_page()
 
         elif horizontal_menu == translate_text("Home", st.session_state.language):
             home_page()
@@ -654,5 +641,3 @@ st.markdown("""
 
 if __name__ == "__main__":
     main()
-
-
